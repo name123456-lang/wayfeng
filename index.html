@@ -1,0 +1,997 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>舆情研判辅助Demo版</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Noto+Sans+SC:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+    <style>
+        :root {
+            --bg-primary: #0a0e27;
+            --bg-secondary: #111536;
+            --bg-tertiary: #1a1f4a;
+            --bg-user: #1e2a5a;
+            --bg-bot: #111536;
+            --accent-cyan: #00f5d4;
+            --accent-red: #ff6b6b;
+            --accent-yellow: #ffd93d;
+            --accent-blue: #6c5ce7;
+            --text-primary: #e8e8e8;
+            --text-secondary: #a0a0b0;
+            --text-muted: #6c6c7c;
+            --border-color: #2a2f5a;
+            --glow-cyan: 0 0 20px rgba(0, 245, 212, 0.4);
+            --glow-red: 0 0 20px rgba(255, 107, 107, 0.4);
+            --glow-yellow: 0 0 20px rgba(255, 217, 61, 0.4);
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Noto Sans SC', sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        .bg-grid {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-image: 
+                linear-gradient(rgba(0, 245, 212, 0.03) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(0, 245, 212, 0.03) 1px, transparent 1px);
+            background-size: 50px 50px;
+            pointer-events: none;
+            z-index: 0;
+        }
+
+        .bg-glow {
+            position: fixed;
+            width: 600px;
+            height: 600px;
+            border-radius: 50%;
+            filter: blur(150px);
+            opacity: 0.15;
+            pointer-events: none;
+            z-index: 0;
+        }
+
+        .bg-glow-1 { top: -200px; right: -100px; background: var(--accent-cyan); }
+        .bg-glow-2 { bottom: -200px; left: -100px; background: var(--accent-red); }
+
+        .scanline {
+            position: fixed;
+            top: 0; left: 0;
+            width: 100%; height: 2px;
+            background: linear-gradient(90deg, transparent, var(--accent-cyan), transparent);
+            animation: scanline 4s linear infinite;
+            pointer-events: none;
+            z-index: 100;
+        }
+
+        @keyframes scanline {
+            0% { top: 0; opacity: 0; }
+            10% { opacity: 1; }
+            90% { opacity: 1; }
+            100% { top: 100%; opacity: 0; }
+        }
+
+        .app {
+            position: relative;
+            z-index: 1;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        header {
+            padding: 16px 24px;
+            border-bottom: 1px solid var(--border-color);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            background: rgba(17, 21, 54, 0.8);
+            backdrop-filter: blur(10px);
+        }
+
+        .header-left {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .logo-icon {
+            width: 36px;
+            height: 36px;
+            background: linear-gradient(135deg, var(--accent-cyan), var(--accent-blue));
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .logo-icon svg {
+            width: 20px;
+            height: 20px;
+            color: var(--bg-primary);
+        }
+
+        .logo-text {
+            font-size: 1.1rem;
+            font-weight: 600;
+            background: linear-gradient(135deg, var(--accent-cyan), var(--accent-blue));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .demo-badge {
+            background: linear-gradient(135deg, var(--accent-cyan), var(--accent-blue));
+            color: var(--bg-primary);
+            padding: 3px 10px;
+            border-radius: 12px;
+            font-size: 0.7rem;
+            font-weight: 600;
+        }
+
+        .chat-container {
+            flex: 1;
+            overflow-y: auto;
+            padding: 24px;
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+
+        .chat-container::-webkit-scrollbar {
+            width: 6px;
+        }
+        .chat-container::-webkit-scrollbar-track { background: var(--bg-secondary); }
+        .chat-container::-webkit-scrollbar-thumb {
+            background: var(--border-color);
+            border-radius: 3px;
+        }
+
+        .message {
+            display: flex;
+            gap: 12px;
+            max-width: 85%;
+            animation: msgIn 0.3s ease-out;
+        }
+
+        @keyframes msgIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .message.user {
+            align-self: flex-end;
+            flex-direction: row-reverse;
+        }
+
+        .avatar {
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+        }
+
+        .avatar.bot {
+            background: linear-gradient(135deg, var(--accent-cyan), var(--accent-blue));
+        }
+        .avatar.bot svg { width: 18px; height: 18px; color: var(--bg-primary); }
+
+        .avatar.user {
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border-color);
+        }
+        .avatar.user svg { width: 18px; height: 18px; color: var(--text-secondary); }
+
+        .bubble {
+            background: var(--bg-bot);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 14px 16px;
+            line-height: 1.6;
+            font-size: 0.9rem;
+        }
+
+        .message.user .bubble {
+            background: var(--bg-user);
+            border-color: var(--accent-blue);
+        }
+
+        .bubble img {
+            max-width: 100%;
+            max-height: 200px;
+            border-radius: 8px;
+            margin-top: 8px;
+        }
+
+        .greeting {
+            text-align: center;
+            padding: 40px 20px 20px;
+        }
+
+        .greeting-title {
+            font-size: 1.5rem;
+            font-weight: 600;
+            margin-bottom: 12px;
+            background: linear-gradient(135deg, var(--accent-cyan), var(--accent-blue));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .greeting-sub {
+            color: var(--text-secondary);
+            font-size: 0.9rem;
+            margin-bottom: 30px;
+        }
+
+        .quick-actions {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            justify-content: center;
+        }
+
+        .quick-chip {
+            padding: 8px 16px;
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+            border-radius: 20px;
+            color: var(--text-secondary);
+            font-size: 0.8rem;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .quick-chip:hover {
+            border-color: var(--accent-cyan);
+            color: var(--accent-cyan);
+        }
+
+        .risk-card {
+            background: var(--bg-primary);
+            border: 1px solid var(--border-color);
+            border-radius: 10px;
+            padding: 16px;
+            margin-top: 12px;
+        }
+
+        .risk-header {
+            text-align: center;
+            margin-bottom: 14px;
+        }
+
+        .risk-level {
+            font-size: 1.8rem;
+            font-weight: 700;
+            margin-bottom: 4px;
+            animation: pulse-glow 2s ease-in-out infinite;
+        }
+        .risk-level.high { color: var(--accent-red); text-shadow: var(--glow-red); }
+        .risk-level.medium { color: var(--accent-yellow); text-shadow: var(--glow-yellow); }
+        .risk-level.low { color: #a0a0b0; }
+        .risk-level.safe { color: var(--accent-cyan); text-shadow: var(--glow-cyan); }
+
+        @keyframes pulse-glow {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.7; }
+        }
+
+        .risk-meta {
+            display: flex;
+            justify-content: space-between;
+            font-size: 0.75rem;
+            color: var(--text-muted);
+            margin-bottom: 12px;
+        }
+
+        .risk-action {
+            background: var(--bg-tertiary);
+            border-radius: 6px;
+            padding: 10px 12px;
+            font-size: 0.8rem;
+            color: var(--text-secondary);
+            margin-bottom: 12px;
+        }
+
+        .keywords-row {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+            margin-bottom: 12px;
+        }
+
+        .keyword-tag {
+            padding: 4px 10px;
+            background: var(--bg-tertiary);
+            border: 1px solid var(--accent-cyan);
+            border-radius: 12px;
+            color: var(--accent-cyan);
+            font-size: 0.7rem;
+        }
+
+        .json-toggle {
+            color: var(--accent-cyan);
+            font-size: 0.75rem;
+            cursor: pointer;
+            text-decoration: underline;
+        }
+
+        .json-box {
+            margin-top: 10px;
+            background: #0a0e27;
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+            padding: 12px;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.7rem;
+            line-height: 1.5;
+            max-height: 250px;
+            overflow-y: auto;
+            position: relative;
+        }
+
+        .json-box.hidden { display: none; }
+
+        .json-copy {
+            position: absolute;
+            top: 8px; right: 8px;
+            padding: 3px 8px;
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border-color);
+            border-radius: 4px;
+            color: var(--text-secondary);
+            font-size: 0.65rem;
+            cursor: pointer;
+            font-family: inherit;
+        }
+        .json-copy:hover { border-color: var(--accent-cyan); color: var(--accent-cyan); }
+
+        .json-key { color: var(--accent-cyan); }
+        .json-string { color: #a8ff78; }
+        .json-number { color: #ffd93d; }
+
+        .input-area {
+            padding: 16px 24px 20px;
+            border-top: 1px solid var(--border-color);
+            background: rgba(17, 21, 54, 0.8);
+            backdrop-filter: blur(10px);
+        }
+
+        .input-wrapper {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+            border-radius: 16px;
+            overflow: hidden;
+            transition: border-color 0.3s;
+        }
+
+        .input-wrapper.focused {
+            border-color: var(--accent-cyan);
+        }
+
+        .image-preview {
+            padding: 10px 14px 0;
+            display: none;
+        }
+        .image-preview.show { display: block; }
+
+        .preview-item {
+            position: relative;
+            display: inline-block;
+            margin-right: 8px;
+        }
+
+        .preview-item img {
+            width: 60px;
+            height: 60px;
+            object-fit: cover;
+            border-radius: 8px;
+            border: 1px solid var(--border-color);
+        }
+
+        .preview-remove {
+            position: absolute;
+            top: -6px; right: -6px;
+            width: 20px; height: 20px;
+            background: var(--accent-red);
+            border: none;
+            border-radius: 50%;
+            color: white;
+            font-size: 12px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        textarea.input-text {
+            width: 100%;
+            min-height: 44px;
+            max-height: 150px;
+            background: transparent;
+            border: none;
+            outline: none;
+            padding: 12px 14px;
+            color: var(--text-primary);
+            font-family: 'Noto Sans SC', sans-serif;
+            font-size: 0.9rem;
+            line-height: 1.5;
+            resize: none;
+        }
+
+        .input-toolbar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 8px 12px;
+            border-top: 1px solid var(--border-color);
+        }
+
+        .toolbar-left {
+            display: flex;
+            gap: 4px;
+        }
+
+        .tool-btn {
+            width: 32px; height: 32px;
+            background: transparent;
+            border: none;
+            border-radius: 8px;
+            color: var(--text-secondary);
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.3s;
+        }
+        .tool-btn:hover {
+            background: var(--bg-tertiary);
+            color: var(--accent-cyan);
+        }
+        .tool-btn svg { width: 18px; height: 18px; }
+
+        .tool-btn:disabled {
+            opacity: 0.4;
+            cursor: not-allowed;
+        }
+
+        .send-btn {
+            padding: 8px 20px;
+            background: linear-gradient(135deg, var(--accent-cyan), var(--accent-blue));
+            border: none;
+            border-radius: 10px;
+            color: var(--bg-primary);
+            font-family: inherit;
+            font-size: 0.85rem;
+            font-weight: 600;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            transition: all 0.3s;
+        }
+        .send-btn:hover {
+            transform: translateY(-1px);
+            box-shadow: var(--glow-cyan);
+        }
+        .send-btn:disabled {
+            opacity: 0.4;
+            cursor: not-allowed;
+            transform: none;
+            box-shadow: none;
+        }
+        .send-btn svg { width: 16px; height: 16px; }
+
+        .typing-indicator {
+            display: flex;
+            gap: 4px;
+            padding: 4px 0;
+        }
+        .typing-indicator span {
+            width: 6px; height: 6px;
+            background: var(--text-muted);
+            border-radius: 50%;
+            animation: typing 1.4s infinite;
+        }
+        .typing-indicator span:nth-child(2) { animation-delay: 0.2s; }
+        .typing-indicator span:nth-child(3) { animation-delay: 0.4s; }
+
+        @keyframes typing {
+            0%, 60%, 100% { transform: translateY(0); opacity: 0.4; }
+            30% { transform: translateY(-6px); opacity: 1; }
+        }
+
+        .ocr-progress {
+            margin-top: 8px;
+            font-size: 0.75rem;
+            color: var(--text-muted);
+        }
+        .ocr-progress-bar {
+            height: 3px;
+            background: var(--bg-tertiary);
+            border-radius: 2px;
+            margin-top: 4px;
+            overflow: hidden;
+        }
+        .ocr-progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, var(--accent-cyan), var(--accent-blue));
+            width: 0%;
+            transition: width 0.3s;
+        }
+
+        .hint-text {
+            text-align: center;
+            font-size: 0.7rem;
+            color: var(--text-muted);
+            margin-top: 10px;
+        }
+
+        @media (max-width: 600px) {
+            .message { max-width: 95%; }
+            .chat-container { padding: 16px 12px; }
+            .input-area { padding: 12px; }
+            header { padding: 12px 16px; }
+        }
+    </style>
+</head>
+<body>
+    <div class="bg-grid"></div>
+    <div class="bg-glow bg-glow-1"></div>
+    <div class="bg-glow bg-glow-2"></div>
+    <div class="scanline"></div>
+
+    <div class="app">
+        <header>
+            <div class="header-left">
+                <div class="logo-icon">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+                    </svg>
+                </div>
+                <span class="logo-text">舆情研判助手</span>
+                <span class="demo-badge">DEMO</span>
+            </div>
+        </header>
+
+        <div class="chat-container" id="chatContainer">
+            <div class="greeting" id="greeting">
+                <div class="greeting-title">Hi，今天又发生了哪些舆情事件？</div>
+                <div class="greeting-sub">支持文本和图片输入，自动识别内容并进行风险研判</div>
+                <div class="quick-actions">
+                    <span class="quick-chip" data-sample="high">高热风险案例</span>
+                    <span class="quick-chip" data-sample="medium">中度风险案例</span>
+                    <span class="quick-chip" data-sample="low">低风险案例</span>
+                    <span class="quick-chip" data-sample="safe">安全内容</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="input-area">
+            <div class="input-wrapper" id="inputWrapper">
+                <div class="image-preview" id="imagePreview">
+                    <div class="preview-item" id="previewItem" style="display:none;">
+                        <img id="previewImg" src="" alt="预览">
+                        <button class="preview-remove" id="removeImg">&times;</button>
+                    </div>
+                </div>
+                <textarea class="input-text" id="inputText" placeholder="输入文本内容，或点击左侧图标上传图片..." rows="1"></textarea>
+                <div class="input-toolbar">
+                    <div class="toolbar-left">
+                        <button class="tool-btn" id="uploadBtn" title="上传图片">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
+                                <circle cx="8.5" cy="8.5" r="1.5"/>
+                                <polyline points="21 15 16 10 5 21"/>
+                            </svg>
+                        </button>
+                    </div>
+                    <button class="send-btn" id="sendBtn">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <line x1="22" y1="2" x2="11" y2="13"/>
+                            <polygon points="22 2 15 22 11 13 2 9 22 2"/>
+                        </svg>
+                        发送
+                    </button>
+                </div>
+            </div>
+            <div class="hint-text">支持文本输入 + 图片上传 · OCR自动识别 · Enter发送，Shift+Enter换行</div>
+        </div>
+    </div>
+
+    <input type="file" id="fileInput" accept="image/*" style="display:none;">
+
+    <script>
+        const sampleData = {
+            high: `【爆料】惊天大消息！某地发生大规模群体事件，现场传来激烈枪声和爆炸声！这件事被压下来了，但真相终将大白！独家内部文件显示，有人试图掩盖事实真相，大家赶紧转发，让更多人知道！`,
+            medium: `这个开发商的老板简直是个傻逼，偷工减料盖的楼房质量问题一堆，还威胁要找人弄死举报的业主。大家小心这个人渣，地址都给人肉出来了：某某小区某某号楼。`,
+            low: `今天心情真的很差，工作压力大，老板又各种挑剔，感觉快要崩溃了。唉，人生怎么这么难啊...`,
+            safe: `今日晴朗，气温15-25摄氏度，适宜户外活动。我市成功举办国际马拉松比赛，参赛人数创历史新高。温馨提示：明日有小雨，请市民出行注意携带雨具。`
+        };
+
+        const sensitiveWords = {
+            political: ['反动', '分裂', '暴动', '政变', '颠覆', '渗透'],
+            social: ['罢工', '游行', '聚集', '打砸', '贪污', '包庇', '群体事件', '冲突'],
+            violence: ['枪击', '爆炸', '恐怖', '袭击', '暴徒', '镇压'],
+            personal: ['傻逼', '脑残', '去死', '人肉', '曝光地址'],
+            rumor: ['惊天秘密', '内部文件', '删帖', '封口费', '封杀', '被压'],
+            hype: ['！！！', '热搜', '爆料', '独家', '转发', '扩散']
+        };
+
+        let uploadedImage = null;
+        let worker = null;
+
+        const chatContainer = document.getElementById('chatContainer');
+        const inputText = document.getElementById('inputText');
+        const sendBtn = document.getElementById('sendBtn');
+        const uploadBtn = document.getElementById('uploadBtn');
+        const fileInput = document.getElementById('fileInput');
+        const inputWrapper = document.getElementById('inputWrapper');
+        const imagePreview = document.getElementById('imagePreview');
+        const previewItem = document.getElementById('previewItem');
+        const previewImg = document.getElementById('previewImg');
+        const removeImg = document.getElementById('removeImg');
+        const greeting = document.getElementById('greeting');
+
+        function autoResize() {
+            inputText.style.height = 'auto';
+            inputText.style.height = Math.min(inputText.scrollHeight, 150) + 'px';
+        }
+
+        inputText.addEventListener('input', autoResize);
+        inputText.addEventListener('focus', () => inputWrapper.classList.add('focused'));
+        inputText.addEventListener('blur', () => inputWrapper.classList.remove('focused'));
+
+        inputText.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                sendMessage();
+            }
+        });
+
+        uploadBtn.addEventListener('click', () => fileInput.click());
+
+        fileInput.addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = (ev) => {
+                uploadedImage = { file, dataUrl: ev.target.result };
+                previewImg.src = ev.target.result;
+                previewItem.style.display = 'inline-block';
+                imagePreview.classList.add('show');
+            };
+            reader.readAsDataURL(file);
+        });
+
+        removeImg.addEventListener('click', () => {
+            uploadedImage = null;
+            previewItem.style.display = 'none';
+            imagePreview.classList.remove('show');
+            fileInput.value = '';
+        });
+
+        document.querySelectorAll('.quick-chip').forEach(chip => {
+            chip.addEventListener('click', () => {
+                inputText.value = sampleData[chip.dataset.sample];
+                autoResize();
+                inputText.focus();
+            });
+        });
+
+        function appendUserMessage(text, imageDataUrl) {
+            if (greeting) greeting.style.display = 'none';
+            const msg = document.createElement('div');
+            msg.className = 'message user';
+            msg.innerHTML = `
+                <div class="avatar user">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
+                        <circle cx="12" cy="7" r="4"/>
+                    </svg>
+                </div>
+                <div class="bubble"></div>
+            `;
+            const bubble = msg.querySelector('.bubble');
+            if (text) bubble.textContent = text;
+            if (imageDataUrl) {
+                const img = document.createElement('img');
+                img.src = imageDataUrl;
+                bubble.appendChild(img);
+            }
+            chatContainer.appendChild(msg);
+            chatContainer.scrollTop = chatContainer.scrollHeight;
+        }
+
+        function appendBotLoading(showOcr = false) {
+            const msg = document.createElement('div');
+            msg.className = 'message bot';
+            msg.id = 'loadingMsg';
+            msg.innerHTML = `
+                <div class="avatar bot">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <rect x="2" y="7" width="20" height="14" rx="2" ry="2"/>
+                        <path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/>
+                    </svg>
+                </div>
+                <div class="bubble">
+                    <div class="typing-indicator">
+                        <span></span><span></span><span></span>
+                    </div>
+                    ${showOcr ? `
+                        <div class="ocr-progress">
+                            正在识别图片内容...
+                            <div class="ocr-progress-bar"><div class="ocr-progress-fill" id="ocrProgressFill"></div></div>
+                        </div>
+                    ` : ''}
+                </div>
+            `;
+            chatContainer.appendChild(msg);
+            chatContainer.scrollTop = chatContainer.scrollHeight;
+            return msg;
+        }
+
+        function cleanOCRText(text) {
+            return text
+                .replace(/[|_*#【】]/g, '')
+                .replace(/图片来自网络|截图留存|仅供内部使用|机密/g, '')
+                .replace(/[^\u4e00-\u9fa5a-zA-Z0-9，。、！？；：""''（）《》【】…\s]/g, '')
+                .replace(/\n{2,}/g, '\n')
+                .replace(/\s+/g, ' ')
+                .trim();
+        }
+
+        function assessRisk(text) {
+            const lowerText = text.toLowerCase();
+            let score = 0;
+            let categories = [];
+
+            const politicalCount = sensitiveWords.political.filter(w => lowerText.includes(w)).length;
+            if (politicalCount > 0) { score += politicalCount * 0.4; categories.push('涉政'); }
+
+            const socialCount = sensitiveWords.social.filter(w => lowerText.includes(w)).length;
+            if (socialCount > 0) { score += socialCount * 0.3; categories.push('社会民生'); }
+
+            const violenceCount = sensitiveWords.violence.filter(w => lowerText.includes(w)).length;
+            if (violenceCount > 0) { score += violenceCount * 0.5; categories.push('涉暴'); }
+
+            const personalCount = sensitiveWords.personal.filter(w => lowerText.includes(w)).length;
+            if (personalCount > 0) { score += personalCount * 0.35; categories.push('网暴'); }
+
+            const rumorCount = sensitiveWords.rumor.filter(w => lowerText.includes(w)).length;
+            if (rumorCount > 0) { score += rumorCount * 0.3; categories.push('谣言'); }
+
+            const hypeCount = sensitiveWords.hype.filter(w => text.includes(w)).length;
+            if (hypeCount > 0) score += hypeCount * 0.15;
+
+            const exclaimCount = (text.match(/！/g) || []).length;
+            if (exclaimCount >= 3) score += 0.2;
+
+            const atCount = (text.match(/@[^\s]+/g) || []).length;
+            if (atCount >= 2) score += 0.15;
+
+            let level, action;
+            if (score >= 0.6 || categories.includes('涉政') || categories.includes('涉暴')) {
+                level = 'High'; action = '立即标记高热，建议封禁/上报';
+            } else if (score >= 0.3) {
+                level = 'Medium'; action = '标记风险，建议人工复核';
+            } else if (score >= 0.1) {
+                level = 'Low'; action = '持续观察，无需干预';
+            } else {
+                level = 'Safe'; action = '放行/忽略';
+            }
+
+            return {
+                level,
+                category: categories.length > 0 ? categories.join('/') : '无',
+                confidence: Math.min(0.95, Math.max(0.5, score + 0.5)),
+                action
+            };
+        }
+
+        function extractKeywords(text) {
+            const words = text.split(/[\s，。、！？；：""''（）《》【】,\.!?:;'"()\[\]\n]+/)
+                .filter(w => w.length >= 2 && !/^\d+$/.test(w));
+            const freq = {};
+            words.forEach(w => { freq[w] = (freq[w] || 0) + 1; });
+            return Object.entries(freq)
+                .sort((a, b) => b[1] - a[1])
+                .slice(0, 5)
+                .map(([word]) => word);
+        }
+
+        function highlightJSON(json) {
+            return json
+                .replace(/"([^"]+)":/g, '<span class="json-key">"$1"</span>:')
+                .replace(/: "([^"]*)"/g, ': <span class="json-string">"$1"</span>')
+                .replace(/: (\d+\.?\d*)/g, ': <span class="json-number">$1</span>');
+        }
+
+        async function doOCR(imageDataUrl) {
+            if (!worker) {
+                worker = await Tesseract.createWorker('chi_sim+eng', 1, {
+                    logger: m => {
+                        const fill = document.getElementById('ocrProgressFill');
+                        if (fill && m.status === 'recognizing text') {
+                            fill.style.width = (m.progress * 100) + '%';
+                        }
+                    }
+                });
+            }
+            const ret = await worker.recognize(imageDataUrl);
+            return ret.data.text;
+        }
+
+        function appendBotResult(result, hasImage) {
+            const loading = document.getElementById('loadingMsg');
+            if (loading) loading.remove();
+
+            const levelClass = result.risk_assessment.level.toLowerCase();
+            const levelText = { 'High': '高热风险', 'Medium': '中度风险', 'Low': '低风险', 'Safe': '安全' };
+
+            const msg = document.createElement('div');
+            msg.className = 'message bot';
+            msg.innerHTML = `
+                <div class="avatar bot">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <rect x="2" y="7" width="20" height="14" rx="2" ry="2"/>
+                        <path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/>
+                    </svg>
+                </div>
+                <div class="bubble">
+                    <div style="margin-bottom:8px;">
+                        ${hasImage ? '已识别图片内容并完成风险研判：' : '已完成风险研判：'}
+                    </div>
+                    <div class="risk-card">
+                        <div class="risk-header">
+                            <div class="risk-level ${levelClass}">${levelText[result.risk_assessment.level]}</div>
+                        </div>
+                        <div class="risk-meta">
+                            <span>类别：${result.risk_assessment.category}</span>
+                            <span>置信度：${(result.risk_assessment.confidence * 100).toFixed(0)}%</span>
+                        </div>
+                        <div class="risk-action">
+                            <strong>处置建议：</strong>${result.action_suggestion}
+                        </div>
+                        <div class="keywords-row">
+                            ${result.keywords.map(k => `<span class="keyword-tag">${k}</span>`).join('')}
+                        </div>
+                        <span class="json-toggle" onclick="this.nextElementSibling.classList.toggle('hidden')">查看完整JSON ▾</span>
+                        <div class="json-box hidden">
+                            <button class="json-copy" onclick="copyJson(this)">复制</button>
+                            <pre>${highlightJSON(JSON.stringify(result, null, 2))}</pre>
+                        </div>
+                    </div>
+                    <div style="font-size:0.7rem;color:var(--text-muted);margin-top:10px;">
+                        ${result.demo_note}
+                    </div>
+                </div>
+            `;
+            chatContainer.appendChild(msg);
+            chatContainer.scrollTop = chatContainer.scrollHeight;
+
+            msg.querySelector('.json-box pre').dataset.raw = JSON.stringify(result, null, 2);
+        }
+
+        function copyJson(btn) {
+            const raw = btn.nextElementSibling.dataset.raw;
+            navigator.clipboard.writeText(raw).then(() => {
+                btn.textContent = '已复制';
+                setTimeout(() => btn.textContent = '复制', 1500);
+            });
+        }
+        window.copyJson = copyJson;
+
+        async function sendMessage() {
+            const text = inputText.value.trim();
+            if (!text && !uploadedImage) return;
+
+            appendUserMessage(text, uploadedImage ? uploadedImage.dataUrl : null);
+
+            const hasImage = !!uploadedImage;
+            appendBotLoading(hasImage);
+
+            sendBtn.disabled = true;
+            uploadBtn.disabled = true;
+            inputText.disabled = true;
+
+            try {
+                let analyzedText = text || '';
+
+                if (uploadedImage) {
+                    const ocrText = await doOCR(uploadedImage.dataUrl);
+                    const cleanedOcr = cleanOCRText(ocrText);
+                    if (analyzedText) {
+                        analyzedText = analyzedText + '\n' + cleanedOcr;
+                    } else {
+                        analyzedText = cleanedOcr;
+                    }
+                }
+
+                if (!analyzedText.trim()) {
+                    const loading = document.getElementById('loadingMsg');
+                    if (loading) loading.remove();
+                    appendBotText('未能识别到有效文字内容，请检查图片清晰度或补充文字说明。');
+                    return;
+                }
+
+                const sourceType = hasImage ? 'OCR' : 'Text';
+                const cleaned = hasImage ? cleanOCRText(analyzedText) : analyzedText;
+                const risk = assessRisk(cleaned);
+                const keywords = extractKeywords(cleaned);
+
+                const result = {
+                    task_type: 'OCR_Cleaning_and_Analysis',
+                    source_type: sourceType,
+                    original_snippet: analyzedText.substring(0, 50) + (analyzedText.length > 50 ? '...' : ''),
+                    cleaned_text: cleaned,
+                    keywords: keywords,
+                    risk_assessment: {
+                        level: risk.level,
+                        category: risk.category,
+                        confidence: parseFloat(risk.confidence.toFixed(2))
+                    },
+                    action_suggestion: risk.action,
+                    demo_note: '当前为Demo模式，判定逻辑基于内置简单规则，非最终生产环境标准。'
+                };
+
+                appendBotResult(result, hasImage);
+
+            } catch (err) {
+                console.error(err);
+                const loading = document.getElementById('loadingMsg');
+                if (loading) loading.remove();
+                appendBotText('处理出错了：' + err.message);
+            } finally {
+                sendBtn.disabled = false;
+                uploadBtn.disabled = false;
+                inputText.disabled = false;
+                inputText.value = '';
+                autoResize();
+                uploadedImage = null;
+                previewItem.style.display = 'none';
+                imagePreview.classList.remove('show');
+                fileInput.value = '';
+                inputText.focus();
+            }
+        }
+
+        function appendBotText(text) {
+            const msg = document.createElement('div');
+            msg.className = 'message bot';
+            msg.innerHTML = `
+                <div class="avatar bot">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <rect x="2" y="7" width="20" height="14" rx="2" ry="2"/>
+                        <path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/>
+                    </svg>
+                </div>
+                <div class="bubble">${text}</div>
+            `;
+            chatContainer.appendChild(msg);
+            chatContainer.scrollTop = chatContainer.scrollHeight;
+        }
+
+        sendBtn.addEventListener('click', sendMessage);
+    </script>
+</body>
+</html>
